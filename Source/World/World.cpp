@@ -25,22 +25,22 @@ World::World(const Camera& camera, int32_t worldSize)
 
 void World::checkPlayerBounds(Player& player)
 {
-    if (player.position.x < 0.2)
+    if (player.position.x < 0.2f)
     {
-        player.position.x = 0.2;
+        player.position.x = 0.2f;
     }
-    if (player.position.z < 0.2)
+    if (player.position.z < 0.2f)
     {
-        player.position.z = 0.2;
+        player.position.z = 0.2f;
     }
 
-    if (player.position.x + 0.2 > m_worldSize * CHUNK_SIZE - 0.2 )
+    if (player.position.x + 0.2f > m_worldSize * CHUNK_SIZE - 0.2f )
     {
-        player.position.x = m_worldSize * CHUNK_SIZE - 0.3;
+        player.position.x = m_worldSize * CHUNK_SIZE - 0.3f;
     }
-    if (player.position.z + 0.2 > m_worldSize * CHUNK_SIZE - 0.2 )
+    if (player.position.z + 0.2f > m_worldSize * CHUNK_SIZE - 0.2f )
     {
-        player.position.z = m_worldSize * CHUNK_SIZE - 0.3;
+        player.position.z = m_worldSize * CHUNK_SIZE - 0.3f;
     }
 }
 
@@ -63,80 +63,26 @@ CBlock World::getBlock(const Vector3& position)
 }
 
 
-void World::regenerateChunks()
-{
-    std::unordered_map<Chunk::Chunklet_Position, Chunk::Section*> chunksToUpdate;
-
-    //Duh, inserts a chunk into the map..
-    auto insertChunk = [&](const Chunk::Chunklet_Position& chunkPosition,
-                                 Chunk::Section* chunk)
-    {
-        Chunk::Full_Chunk* chunkFull = m_chunks.get({chunkPosition.x, chunkPosition.z});
-        if(!chunkFull)
-            return;
-
-        while (!chunk)
-        {
-            chunkFull->addSection();
-            chunk = chunkFull->getSection(chunkPosition.y);
-        }
-        chunksToUpdate.insert(std::make_pair(chunkPosition, chunk));
-    };
-
-    //Lambda checks if blocks are being set on chunk edges, and if so, adds the adjacent chunk to the update batch
-    auto checkForBatchAdd = [&](int8_t position,
-                                const Chunk::Chunklet_Position& chunkPosition,
-                                const Vector3& direction)
-    {
-        if (position == 0)
-        {
-            Chunk::Chunklet_Position newChunkPosition(  chunkPosition.x - direction.x,
-                                                        chunkPosition.y - direction.y,
-                                                        chunkPosition.z - direction.z);
-
-            insertChunk(newChunkPosition, m_chunks.get(newChunkPosition));
-        }
-        else if (position == CHUNK_SIZE - 1)
-        {
-            Chunk::Chunklet_Position newChunkPosition(  chunkPosition.x + direction.x,
-                                                        chunkPosition.y + direction.y,
-                                                        chunkPosition.z + direction.z);
-
-            insertChunk(newChunkPosition, m_chunks.get(newChunkPosition));
-        }
-    };
-
-
-
-    for (New_Block& newBlock : m_newBlocks)
-    {
-        Chunk::Chunklet_Position    chunkPosition   = Maths::worldToChunkletPos(newBlock.position);
-        Block::Small_Position       blockPosition   = Maths::blockToSmallBlockPos(Maths::worldToBlockPos(newBlock.position));
-        Chunk::Section*             chunk           = m_chunks.get(chunkPosition);
-        Chunk::Full_Chunk*          chunkFull       = m_chunks.get({chunkPosition.x, chunkPosition.z});
-
-        while (!chunk)
-        {
-            chunkFull->addSection();
-            chunk = chunkFull->getSection(chunkPosition.y);
-        }
-
-        chunk->qSetBlock(blockPosition, newBlock.block);
-        insertChunk(chunkPosition, chunk);
-        checkForBatchAdd(blockPosition.x, chunkPosition, {1, 0, 0});
-        checkForBatchAdd(blockPosition.y, chunkPosition, {0, 1, 0});
-        checkForBatchAdd(blockPosition.z, chunkPosition, {0, 0, 1});
-    }
-
-    for (auto& chunk : chunksToUpdate)
-    {
-        Chunk::Section* sect = chunk.second;
-        sect->makeMesh();
-    }
-
-    m_newBlocks.clear();
+void World::addSectionUpdate(Chunk::Section* section) {
+    m_sectionsToUpdate.emplace_back(section);
 }
 
+void World::regenerateChunks()
+{
+    for(New_Block& newBlock : m_newBlocks) {
+        Chunk::Chunklet_Position    chunkPosition = Maths::worldToChunkletPos(newBlock.position);
+        Block::Position       blockPosition = Maths::worldToBlockPos(newBlock.position);
+        Chunk::Full_Chunk*          chunkFull = m_chunks.get({chunkPosition.x, chunkPosition.z});
+
+        chunkFull->setBlock(blockPosition, newBlock.block, true);
+    }
+
+    for(auto& sect : m_sectionsToUpdate) {
+        sect->makeMesh();
+    }
+    m_sectionsToUpdate.clear();
+    m_newBlocks.clear();
+}
 
 void World::buffer(const Camera& camera)
 {
